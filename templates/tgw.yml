@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  OrgArn:
+    Type: String
+    Description: Org Arn for RAM share of TGW
+
+Resources:
+  TransitGateway:
+    Type: AWS::EC2::TransitGateway
+    Properties:
+      AmazonSideAsn: 65000
+      Description: TGW Route
+      AutoAcceptSharedAttachments: enable
+      DefaultRouteTableAssociation: disable
+      DefaultRouteTablePropagation: disable
+      DnsSupport: enable
+      VpnEcmpSupport: enable
+      Tags:
+      - Key: Name
+        Value: central-tgw
+      - Key: Application
+        Value: !Ref AWS::StackId
+
+  TransitGatewayNonProdRoute:
+    Type: AWS::EC2::TransitGatewayRouteTable
+    Properties:
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackId
+      - Key: Name
+        Value: Non-Prod
+      TransitGatewayId: !Ref TransitGateway
+
+  TransitGatewayProdRoute:
+    Type: AWS::EC2::TransitGatewayRouteTable
+    Properties:
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackId
+      - Key: Name
+        Value: Prod
+      TransitGatewayId: !Ref TransitGateway
+
+  TransitGatewaySharedRoute:
+    Type: AWS::EC2::TransitGatewayRouteTable
+    Properties:
+      Tags:
+      - Key: Application
+        Value: !Ref AWS::StackId
+      - Key: Name
+        Value: Shared
+      TransitGatewayId: !Ref TransitGateway
+
+  TGWInternetRouteProdBlackhole:
+    Type: AWS::EC2::TransitGatewayRoute
+    Properties: 
+      Blackhole: true
+      DestinationCidrBlock: "10.0.0.0/8"
+      TransitGatewayRouteTableId: !Ref TransitGatewayProdRoute
+
+  TGWInternetRouteNonProdBlackhole:
+    Type: AWS::EC2::TransitGatewayRoute
+    Properties: 
+      Blackhole: true
+      DestinationCidrBlock: "10.0.0.0/8"
+      TransitGatewayRouteTableId: !Ref TransitGatewayNonProdRoute
+
+  TGWInternetRouteSharedBlackhole:
+    Type: AWS::EC2::TransitGatewayRoute
+    Properties: 
+      Blackhole: true
+      DestinationCidrBlock: "10.0.0.0/8"
+      TransitGatewayRouteTableId: !Ref TransitGatewaySharedRoute
+
+  TGWResourceShare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      Name: TGW-Org-Share
+      ResourceArns:
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:transit-gateway/${TransitGateway}
+      Principals:
+        - !Ref OrgArn
+
+Outputs:
+  ProdTGWRouteTable:
+    Description: Prod TGW Route Table
+    Value: !Ref TransitGatewayProdRoute
+    Export:
+      Name: Prod-Route-Table
+  NonProdTGWRouteTable:
+    Description: Non Prod TGW Route Table
+    Value: !Ref TransitGatewayNonProdRoute
+    Export:
+      Name: Non-Prod-Route-Table
+  SharedTGWRouteTable:
+    Description: Shared TGW Route Table
+    Value: !Ref TransitGatewaySharedRoute
+    Export:
+      Name: Shared-Route-Table
+

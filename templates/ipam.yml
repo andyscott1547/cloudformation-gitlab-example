@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  pOperatingRegion:
+    Type: String
+    Description: Operating region for IPAM
+  pOrgArn:
+    Type: String
+    Description: Org Arn for RAM share of TGW
+
+Resources:
+  rOrgIPAM:
+    Type: AWS::EC2::IPAM
+    Properties: 
+      Description: Demo IPAM for Organization network demo
+      OperatingRegions: 
+        - RegionName: !Ref pOperatingRegion
+
+  rOrgIPAMScope:
+    Type: AWS::EC2::IPAMScope
+    Properties: 
+      IpamId: !Ref rOrgIPAM
+  
+  rOrgIPAMPool:
+    Type: AWS::EC2::IPAMPool
+    Properties: 
+      Locale: !Ref pOperatingRegion
+      AddressFamily: ipv4
+      IpamScopeId: !Ref rOrgIPAMScope
+      ProvisionedCidrs:
+        - Cidr: "10.0.0.0/8"
+
+  IPAMResourceShare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      Name: TGW-Org-Share
+      ResourceArns:
+        - !GetAtt rOrgIPAMPool.Arn
+      Principals:
+        -  !Ref pOrgArn
+

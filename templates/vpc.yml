@@ -1,0 +1,489 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  IPAMPoolID:
+    Type: String
+    Description: IPAM Pool ID to allocate VPC Cidr range
+  VpcCidrSize:
+    Type: String
+    Description: Subnet mask length for vpc cidr allocated from AWS IPAM
+    AllowedValues: [ "16", "17", "18", "19", "20" ]
+    Default: "16"
+  Environment:
+    AllowedValues:
+      - 'CI'
+      - 'Dev'
+      - 'Test'
+      - 'QA'
+      - 'Prod'
+      - 'HZ-SVC'
+      - 'MGMT'
+    Default: 'Dev'
+    Description: Environment Type
+    Type: String
+  Contact:
+    Type: String
+    Description: Contact details for owner of this service
+  TransitGatewayID:
+    Type: String
+    Description: ID of the Transit Gateway
+  NetworkAccountID:
+    Type: String
+    Description: ID of the central Network account
+  NetworkAutomationSNSTopicName:
+    Type: String
+    Description: SNS topic name, for network automation
+    Default: "central-network-automation"
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      Ipv4IpamPoolId: !Ref IPAMPoolID
+      Ipv4NetmaskLength: !Ref VpcCidrSize
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-VPC
+      - Key: Environment
+        Value: !Sub ${Environment}
+      - Key: Contact
+        Value: !Sub ${Contact}
+
+# Creates 3 Public subnets with public IPs
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt VPC.CidrBlock, 6, 7 ]]
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-Public-A
+      - Key: Environment
+        Value: !Sub ${Environment}
+      - Key: Contact
+        Value: !Sub ${Contact}
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 1, !Cidr [ !GetAtt VPC.CidrBlock, 6, 7 ]]
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-Public-B
+      - Key: Environment
+        Value: !Sub ${Environment}
+      - Key: Contact
+        Value: !Sub ${Contact}
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 2, !Cidr [ !GetAtt VPC.CidrBlock, 6, 7 ]]
+      AvailabilityZone: !Select [ 2, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-Public-C
+      - Key: Environment
+        Value: !Sub ${Environment}
+      - Key: Contact
+        Value: !Sub ${Contact}
+# Creates public route table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-Public-Route-Table
+      - Key: Environment
+        Value: !Sub ${Environment}
+      - Key: Contact
+        Value: !Sub ${Contact}
+  PublicRoute2:
+    Type: AWS::EC2::Route
+    DependsOn: TGWattachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      TransitGatewayId: !Ref TransitGatewayID
+# Asspociates public subnets to route table
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
+# Creates 3 private subnets
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 3, !Cidr [ !GetAtt VPC.CidrBlock, 6, 7 ]]
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-Private-A
+      - Key: Environment
+        Value: !Sub ${Environment}
+      - Key: Contact
+        Value: !Sub ${Contact}
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 4, !Cidr [ !GetAtt VPC.CidrBlock, 6, 7 ]]
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-Private-B
+      - Key: Environment
+        Value: !Sub ${Environment}
+      - Key: Contact
+        Value: !Sub ${Contact}
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 5, !Cidr [ !GetAtt VPC.CidrBlock, 6, 7 ]]
+      AvailabilityZone: !Select [ 2, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-Private-C
+      - Key: Environment
+        Value: !Sub ${Environment}
+      - Key: Contact
+        Value: !Sub ${Contact}
+# Creates private route table:
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-Private-Route-Table
+      - Key: Environment
+        Value: !Sub ${Environment}
+      - Key: Contact
+        Value: !Sub ${Contact}
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    DependsOn: TGWattachment
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      TransitGatewayId: !Ref TransitGatewayID
+
+# Asspociates private subnets to route table
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetC
+      RouteTableId: !Ref PrivateRouteTable
+
+  IntraVPCGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VPC Access
+      GroupName: !Sub ${Environment}-VPC-Traffic-SG
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${Environment}-VPC-Traffic-SG"
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Contact
+          Value: !Sub ${Contact}
+  EcsSecurityGroupIngressFromSelf:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Ingress from other hosts in the same security group
+      GroupId: !Ref IntraVPCGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref IntraVPCGroup
+
+  FlowLogs:
+    Type: 'AWS::EC2::FlowLog'
+    Properties:
+      ResourceType: VPC
+      ResourceId: !Ref VPC
+      TrafficType: ALL
+      LogGroupName: !Sub /${AWS::StackName}/FlowLogs
+      LogDestinationType: cloud-watch-logs
+      DeliverLogsPermissionArn: !GetAtt IamRoleForFlowLogs.Arn
+      Tags:
+        -
+          Key: Name
+          Value: !Sub ${Environment}-FlowLog
+  FlowLogsGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub /${Environment}-VPC/FlowLogs
+  IamRoleForFlowLogs:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${Environment}-FlowLogs-Role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: allow-access-to-cw-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:DescribeLogStreams'
+                Resource: '*'
+
+  TGWattachment:
+    Type: AWS::EC2::TransitGatewayAttachment
+    Properties: 
+      SubnetIds: 
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+        - !Ref PrivateSubnetC
+      Tags: 
+        - Key: Name
+          Value:  !Sub ${Environment}-VPC
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Contact
+          Value: !Sub ${Contact}
+      TransitGatewayId: !Ref TransitGatewayID
+      VpcId: !Ref VPC
+
+  # Custom resource to push a message to SNS with TGW attachment details
+  rTGWAutomationTriggerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role: !GetAtt rLambdaExecutionRole.Arn
+      Runtime: python3.7
+      MemorySize: 128
+      Description: CloudFormation custom resource to send an SNS topic message.
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import os
+          import logging
+          import json
+          import cfnresponse
+
+          _logger = logging.getLogger()
+
+          def lambda_handler(event, context):
+            """
+            Main lambda function to trigger TGW and VPC Endpoint automation
+            """
+            rData = {}
+            eventType = ''
+            _logger = getlogger() 
+            _logger.info("Crafting message containing TGW attachment info")
+
+            # Get param variables
+            snsArn         = os.environ.get('vpc_sns_topic_arn')
+            vpcIds         = event['ResourceProperties']['vpc_Ids']
+            vpcName        = event['ResourceProperties']['vpc_name']
+            vpcAttachId    = event['ResourceProperties']['vpc_attach_id']
+            env            = event['ResourceProperties']['environment']
+            accountId      = event['ResourceProperties']['account_Id']
+            region         = event['ResourceProperties']['region']
+
+            res = True
+            rspVal = cfnresponse.SUCCESS
+
+            if (event['RequestType'].upper() == 'CREATE') or (event['RequestType'].upper() == 'UPDATE'):
+                eventType = 'CREATE'
+            elif event['RequestType'].upper() == 'DELETE':
+                eventType = 'DELETE'
+            else:
+                res = False
+                resp = "Unknown operation: " + event['RequestType']
+            if res:
+                try:
+                    # Generate the event structure:
+                    msg = { "EventType": eventType, "VpcId": vpcIds, "VpcName": vpcName, "VpcAttachId": vpcAttachId, "Env": env, "AccountId": accountId, "Region": region }
+                    
+                    sns_client = boto3.client("sns")
+                    
+                    response = sns_client.publish(
+                        TargetArn = snsArn,
+                        Message = json.dumps({"Default": json.dumps(msg)}),
+                        MessageStructure = "json"
+                    )
+                    rData['Reason'] = "Successfully posted message about TGW attachment."
+                except Exception as ex:
+                    _logger.error(ex)
+                    _logger.warning("FAILED to post message about TGW attachment")
+                    rspVal = cfnresponse.FAILED
+            else:
+                rData['Reason'] = resp
+                rspVal = cfnresponse.FAILED
+            
+            cfnresponse.send(event, context, rspVal, rData, '')
+
+          def getlogger():
+            handler = None
+
+            try:
+                handler = _logger.handlers[0]
+            except IndexError:
+                handler = logging.StreamHandler()
+                _logger.addHandler(handler)
+
+            # Set Log Level and standard log format
+            log_level = os.environ.get('log_level', "WARNING")
+            logformat = "[%(asctime)s ct-automation %(levelname)s %(name)s:%(message)s"
+            handler.setFormatter(logging.Formatter(logformat, "%Y-%m-%d %H:%M:%S"))
+
+            # Remove sensitive data from debug traces
+            if (log_level == "DEBUG"):
+                filter = LogRecordFilter()
+                handler.addFilter(filter)
+
+            # Set the logging level
+            _logger.setLevel(log_level)
+            logging.getLogger('boto3').setLevel(logging.WARNING)
+            logging.getLogger('botocore').setLevel(logging.WARNING)
+
+            return _logger
+
+          class LogRecordFilter(logging.Filter):
+            def filter(self, record):
+              if (record.name == "botocore.parsers" and "SecretAccessKey" in record.getMessage()):
+                  _logger.debug("Log Filtered")
+                  return
+              return record
+
+      Timeout: 30
+      Environment:
+        Variables:
+          log_level: "INFO"
+          vpc_sns_topic_arn: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${NetworkAccountID}:${NetworkAutomationSNSTopicName}"
+      Tags:
+        - Key: "Component"
+          Value: "vpc-automation"
+
+  # Lambda execution role
+  rLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: lambda-custom-resource
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey*
+                Resource: "*" 
+                 
+      Tags:
+        - Key: "Component"
+          Value: "vpc-automation"
+
+  rTGWRAutomationTrigger:
+    Type: Custom::TGWRAutomationTrigger
+    Properties:
+      vpc_Ids: !Ref VPC
+      vpc_name: !Sub ${Environment}-VPC
+      vpc_attach_id: !Ref TGWattachment
+      environment: !Ref Environment
+      account_Id: !Ref AWS::AccountId
+      region: !Ref AWS::Region
+      ServiceToken: !GetAtt rTGWAutomationTriggerFunction.Arn
+
+Outputs:
+  VPC:
+    Description: VPC of the base network
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${Environment}-${AWS::AccountId}-VPC
+  PublicSubnetA:
+    Description: First Public Subnet
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: !Sub ${Environment}-${AWS::AccountId}-PublicSubnetA
+  PublicSubnetB:
+    Description: Second Public Subnet
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: !Sub ${Environment}-${AWS::AccountId}-PublicSubnetB
+  PublicSubnetC:
+    Description: Third Public Subnet
+    Value: !Ref PublicSubnetC
+    Export:
+      Name: !Sub ${Environment}-${AWS::AccountId}-PublicSubnetC
+  PrivateSubnetA:
+    Description: First Private Subnet
+    Value: !Ref PrivateSubnetA
+    Export:
+      Name: !Sub ${Environment}-${AWS::AccountId}-PrivateSubnetA
+  PrivateSubnetB:
+    Description: Second Private Subnet
+    Value: !Ref PrivateSubnetB
+    Export:
+      Name: !Sub ${Environment}-${AWS::AccountId}-PrivateSubnetB
+  PrivateSubnetC:
+    Description: Third Private Subnet
+    Value: !Ref PrivateSubnetC
+    Export:
+      Name: !Sub ${Environment}-${AWS::AccountId}-PrivateSubnetC
+  IntraVPCGroup:
+    Description: Intra VPC Traffic SG
+    Value: !Ref IntraVPCGroup
+    Export:
+      Name: !Sub ${Environment}-${AWS::AccountId}-VPC-SG

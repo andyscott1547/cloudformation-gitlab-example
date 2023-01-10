@@ -1,0 +1,559 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: Builder Project - Network automation for TGW Route attachment association
+  and propagation.
+Parameters:
+  pEnvironment:
+    AllowedValues:
+    - CI
+    - Dev
+    - Test
+    - QA
+    - Prod
+    - HZ-SVC
+    - MGMT
+    Default: Dev
+    Description: Environment Type
+    Type: String
+  pOrganizationsId:
+    Type: String
+    Description: Organization ID
+Resources:
+  rSnsVpcTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      KmsMasterKeyId:
+        Ref: rSnsTopicEncryptionKey
+      DisplayName: central-network-automation
+      TopicName: central-network-automation
+      Subscription:
+      - Protocol: sqs
+        Endpoint:
+          Fn::GetAtt:
+          - rSqsTgwRoutingQueue
+          - Arn
+      - Protocol: sqs
+        Endpoint:
+          Fn::GetAtt:
+          - rSqsTgwAttachmentTaggingQueue
+          - Arn
+      Tags:
+      - Key: Component
+        Value: vpc-automation
+    Metadata:
+      SamResourceId: rSnsVpcTopic
+  rSnsVpcPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: whole-organization-policy
+          Effect: Allow
+          Principal: '*'
+          Action:
+          - sns:Publish
+          Resource:
+            Ref: rSnsVpcTopic
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgId:
+                Ref: pOrganizationsId
+      Topics:
+      - Ref: rSnsVpcTopic
+    Metadata:
+      SamResourceId: rSnsVpcPolicy
+  rSnsTopicEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: CMK for SNS Topic
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: snsencryptionkey
+        Statement:
+        - Sid: Allow administration of the key
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - kms:Create*
+          - kms:Describe*
+          - kms:Enable*
+          - kms:List*
+          - kms:Put*
+          - kms:Update*
+          - kms:Revoke*
+          - kms:Disable*
+          - kms:Get*
+          - kms:Delete*
+          - kms:ScheduleKeyDeletion
+          - kms:CancelKeyDeletion
+          Resource: '*'
+        - Sid: Allow any Org principal to publish messages
+          Effect: Allow
+          Principal: '*'
+          Action:
+          - kms:Decrypt
+          - kms:GenerateDataKey
+          Resource: '*'
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgId:
+                Ref: pOrganizationsId
+        - Sid: Allow access for service principal
+          Effect: Allow
+          Principal:
+            Service: sns.amazonaws.com
+          Action:
+          - kms:Decrypt
+          - kms:GenerateDataKey
+          Resource: '*'
+      Tags:
+      - Key: Component
+        Value: vpc-automation
+    Metadata:
+      SamResourceId: rSnsTopicEncryptionKey
+  rSNSEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/vpc-automation/Sns
+      TargetKeyId:
+        Ref: rSnsTopicEncryptionKey
+    Metadata:
+      SamResourceId: rSNSEncryptionKeyAlias
+  rSqsTgwRoutingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      DelaySeconds: 0
+      KmsMasterKeyId:
+        Ref: rSqsTgwRoutingEncryptionKey
+      MessageRetentionPeriod: 432000
+      VisibilityTimeout: 300
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+          - rSqsTgwRoutingDeadLetterQueue
+          - Arn
+        maxReceiveCount: 2
+      Tags:
+      - Key: Component
+        Value: vpc-automation
+    Metadata:
+      SamResourceId: rSqsTgwRoutingQueue
+  rSqsTgwRoutingPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: NetworkAccountQueuePolicy
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - rSqsTgwRoutingQueue
+            - Arn
+        - Sid: OrganizationsAccountPolicy
+          Effect: Allow
+          Principal:
+            AWS: '*'
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - rSqsTgwRoutingQueue
+            - Arn
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgId:
+                Ref: pOrganizationsId
+        - Sid: SNSPolicy
+          Effect: Allow
+          Principal: '*'
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - rSqsTgwRoutingQueue
+            - Arn
+          Condition:
+            ArnEquals:
+              aws:SourceArn:
+                Ref: rSnsVpcTopic
+      Queues:
+      - Ref: rSqsTgwRoutingQueue
+    Metadata:
+      SamResourceId: rSqsTgwRoutingPolicy
+  rSqsTgwRoutingEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: CMK for SQS Queue
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: sqstgwroutingencryptionkey
+        Statement:
+        - Sid: AdministrationPermissions
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - kms:Create*
+          - kms:Describe*
+          - kms:Enable*
+          - kms:List*
+          - kms:Put*
+          - kms:Update*
+          - kms:Revoke*
+          - kms:Disable*
+          - kms:Get*
+          - kms:Delete*
+          - kms:ScheduleKeyDeletion
+          - kms:CancelKeyDeletion
+          Resource: '*'
+        - Sid: NetworkAccountPermissions
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - kms:Decrypt
+          - kms:GenerateDataKey
+          Resource: '*'
+        - Sid: OrganizationsAccountPermissions
+          Effect: Allow
+          Principal: '*'
+          Action:
+          - kms:Decrypt
+          - kms:GenerateDataKey
+          Resource: '*'
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgId:
+                Ref: pOrganizationsId
+        - Sid: Allow access for Key User (service principals)
+          Effect: Allow
+          Principal:
+            Service:
+            - sqs.amazonaws.com
+            - sns.amazonaws.com
+          Action:
+          - kms:Decrypt
+          - kms:GenerateDataKey
+          Resource: '*'
+      Tags:
+      - Key: Component
+        Value: vpc-automation
+    Metadata:
+      SamResourceId: rSqsTgwRoutingEncryptionKey
+  rSqsTgwRoutingEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/vpc-automation/SqsTgwRouting
+      TargetKeyId:
+        Ref: rSqsTgwRoutingEncryptionKey
+    Metadata:
+      SamResourceId: rSqsTgwRoutingEncryptionKeyAlias
+  rSqsTgwRoutingDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      DelaySeconds: 0
+      KmsMasterKeyId: alias/aws/sqs
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 30
+      Tags:
+      - Key: Component
+        Value: vpc-automation
+    Metadata:
+      SamResourceId: rSqsTgwRoutingDeadLetterQueue
+  rSqsTgwRoutingDeadLetterQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: Dead Letter Queue policy
+          Effect: Allow
+          Principal:
+            Service: sqs.amazonaws.com
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - rSqsTgwRoutingDeadLetterQueue
+            - Arn
+          Condition:
+            ArnEquals:
+              aws:SourceArn:
+                Fn::GetAtt:
+                - rSqsTgwRoutingQueue
+                - Arn
+      Queues:
+      - Ref: rSqsTgwRoutingDeadLetterQueue
+    Metadata:
+      SamResourceId: rSqsTgwRoutingDeadLetterQueuePolicy
+  rSqsTgwAttachmentTaggingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      DelaySeconds: 0
+      KmsMasterKeyId:
+        Ref: rSqsTgwAttachmentTaggingEncryptionKey
+      MessageRetentionPeriod: 432000
+      VisibilityTimeout: 300
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+          - rSqsTgwAttachmentTaggingDeadLetterQueue
+          - Arn
+        maxReceiveCount: 2
+      Tags:
+      - Key: Component
+        Value: vpc-automation
+    Metadata:
+      SamResourceId: rSqsTgwAttachmentTaggingQueue
+  rSqsTgwAttachmentTaggingPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: NetworkAccountQueuePolicy
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - rSqsTgwAttachmentTaggingQueue
+            - Arn
+        - Sid: OrganizationsAccountPolicy
+          Effect: Allow
+          Principal:
+            AWS: '*'
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - rSqsTgwAttachmentTaggingQueue
+            - Arn
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgId:
+                Ref: pOrganizationsId
+        - Sid: SNSPolicy
+          Effect: Allow
+          Principal: '*'
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - rSqsTgwAttachmentTaggingQueue
+            - Arn
+          Condition:
+            ArnEquals:
+              aws:SourceArn:
+                Ref: rSnsVpcTopic
+      Queues:
+      - Ref: rSqsTgwAttachmentTaggingQueue
+    Metadata:
+      SamResourceId: rSqsTgwAttachmentTaggingPolicy
+  rSqsTgwAttachmentTaggingEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: CMK for SQS Queue
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: sqstgwattachmenttaggingencryptionkey
+        Statement:
+        - Sid: AdministrationPermissions
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - kms:Create*
+          - kms:Describe*
+          - kms:Enable*
+          - kms:List*
+          - kms:Put*
+          - kms:Update*
+          - kms:Revoke*
+          - kms:Disable*
+          - kms:Get*
+          - kms:Delete*
+          - kms:ScheduleKeyDeletion
+          - kms:CancelKeyDeletion
+          Resource: '*'
+        - Sid: NetworkAccountPermissions
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - kms:Decrypt
+          - kms:GenerateDataKey
+          Resource: '*'
+        - Sid: OrganizationsAccountPermissions
+          Effect: Allow
+          Principal: '*'
+          Action:
+          - kms:Decrypt
+          - kms:GenerateDataKey
+          Resource: '*'
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgId:
+                Ref: pOrganizationsId
+        - Sid: Allow access for Key User (service principals)
+          Effect: Allow
+          Principal:
+            Service:
+            - sqs.amazonaws.com
+            - sns.amazonaws.com
+          Action:
+          - kms:Decrypt
+          - kms:GenerateDataKey
+          Resource: '*'
+      Tags:
+      - Key: Component
+        Value: vpc-automation
+    Metadata:
+      SamResourceId: rSqsTgwAttachmentTaggingEncryptionKey
+  rSqsTgwAttachmentTaggingEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/vpc-automation/SqsTgwAttachmentTagging
+      TargetKeyId:
+        Ref: rSqsTgwAttachmentTaggingEncryptionKey
+    Metadata:
+      SamResourceId: rSqsTgwAttachmentTaggingEncryptionKeyAlias
+  rSqsTgwAttachmentTaggingDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      DelaySeconds: 0
+      KmsMasterKeyId: alias/aws/sqs
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 30
+      Tags:
+      - Key: Component
+        Value: vpc-automation
+    Metadata:
+      SamResourceId: rSqsTgwAttachmentTaggingDeadLetterQueue
+  rSqsTgwAttachmentTaggingDeadLetterQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: Dead Letter Queue policy
+          Effect: Allow
+          Principal:
+            Service: sqs.amazonaws.com
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - rSqsTgwAttachmentTaggingDeadLetterQueue
+            - Arn
+          Condition:
+            ArnEquals:
+              aws:SourceArn:
+                Fn::GetAtt:
+                - rSqsTgwAttachmentTaggingQueue
+                - Arn
+      Queues:
+      - Ref: rSqsTgwAttachmentTaggingDeadLetterQueue
+    Metadata:
+      SamResourceId: rSqsTgwAttachmentTaggingDeadLetterQueuePolicy
+  rTGWAssociation:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: tgw_association.lambda_handler
+      Runtime: python3.8
+      CodeUri: s3://cf-templates-1d8rmj2m0rdy7-eu-west-2/b6d4aba06454003580b3a6ca0d4337f2
+      Description: Lambda to associate route table and propagation.
+      Tracing: Active
+      MemorySize: 256
+      Timeout: 30
+      Policies:
+      - CloudWatchPutMetricPolicy: {}
+      - Statement:
+        - Sid: CloudfomrationAllow
+          Effect: Allow
+          Action:
+          - ec2:*
+          Resource: '*'
+      Environment:
+        Variables:
+          LAMBDA_INSIGHTS_LOG_LEVEL: info
+          PROD_ROUTE_TABLE:
+            Fn::ImportValue: Prod-Route-Table
+          NONPROD_ROUTE_TABLE:
+            Fn::ImportValue: Non-Prod-Route-Table
+          SHARED_ROUTE_TABLE:
+            Fn::ImportValue: Shared-Route-Table
+      AutoPublishAlias:
+        Ref: pEnvironment
+      Events:
+        rVPCCreationSQSEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - rSqsTgwRoutingQueue
+              - Arn
+            BatchSize: 1
+    Metadata:
+      SamResourceId: rTGWAssociation
+  rTGWAttachmentTagging:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: tgw_attachment_tagging.lambda_handler
+      Runtime: python3.8
+      CodeUri: s3://cf-templates-1d8rmj2m0rdy7-eu-west-2/b6d4aba06454003580b3a6ca0d4337f2
+      Description: Lambda to tag TGW attachments from spoke accounts.
+      Tracing: Active
+      MemorySize: 256
+      Timeout: 30
+      Policies:
+      - CloudWatchPutMetricPolicy: {}
+      - Statement:
+        - Sid: CloudformationAllow
+          Effect: Allow
+          Action:
+          - ec2:*
+          Resource: '*'
+      Environment:
+        Variables:
+          LAMBDA_INSIGHTS_LOG_LEVEL: info
+      AutoPublishAlias:
+        Ref: pEnvironment
+      Events:
+        rVPCCreationSQSEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - rSqsTgwAttachmentTaggingQueue
+              - Arn
+            BatchSize: 1
+    Metadata:
+      SamResourceId: rTGWAttachmentTagging
+Outputs:
+  oSNSTopicArn:
+    Description: ARN of the Network automation SNS topic
+    Value:
+      Ref: rSnsVpcTopic
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-SNSTopicArn

@@ -1,0 +1,20 @@
+{
+    "Records": [
+        {
+            "messageId": "831ebd6c-5489-4e04-a50f-7ffe1022b902",
+            "receiptHandle": "AQEB4dkgqUeagODwiLS3gUSGJ+WbAm5UxVn6k+AJ7Nuxhwt6SM0BmmsXHtMCcC0FwVOeWr3+o4GZ5mlpOa6GnC9XHWX+1xJIRvFKjPlulZ7tkyFV7FoCcGfYKm2gh/97iadxATXEzDX8v30TPZTHErKD+JkQzww8l98KUWgMyOWuasKmt61+LPvOqRbKWVEIPOetdHAUKr5LKhrHSpEh1+tgSUyZeeDTsPQLAbvzWFKBhZxKc4EfgE5oCoTtvlR0dQIjd+XU9Do60T63vz1XHSHWHiF9PU+WI8farCrw4XN6Ep6bJLwXcb48yw5yFpMrf5d3jMngQmIzx6KyKstl4NH6dwWIxiFtPNpDWDbHEsfghg7TSN+uX2x34kicLJC0PXJxvuY3cjfPRz1hSk0r/pnfFUJELh9FDpNi4tZVIpuiObU0C/kS9269Q5fNZMh+WvJ2FceTfVPjNreq3xk/FtdQJA==",
+            "body": "{\n  'Type' : 'Notification',\n  'MessageId' : 'e076c3d6-094e-577a-a099-9a13848074ad',\n  'TopicArn' : 'arn:aws:sns:eu-west-2:533306432062:central-network-automation',\n  'Message' : '{\\'EventType\\': \\'CREATE\\', \\'VpcId\\': \\'vpc-03a1c90983b614b20\\', \\'VpcAttachId\\': \\'tgw-attach-0ecb7feef620661d8\\', \\'Env\\': \\'CI\\'}',\n  'Timestamp' : '2021-09-22T20:01:18.214Z',\n  'SignatureVersion' : '1',\n  'Signature' : null,\n  'SigningCertURL' : 'https://sns.eu-west-2.amazonaws.com/SimpleNotificationService-7ff5318490ec183fbaddaa2a969abfda.pem',\n  'UnsubscribeURL' : 'https://sns.eu-west-2.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:eu-west-2:533306432062:central-network-automation:08a0655a-fb9c-4959-ac47-55b21f316570'\n}",
+            "attributes": {
+                "ApproximateReceiveCount": "1",
+                "SentTimestamp": "1632340878309",
+                "SenderId": "AIDAIVEA3AGEU7NF6DRAG",
+                "ApproximateFirstReceiveTimestamp": "1632340878314"
+            },
+            "messageAttributes": {},
+            "md5OfBody": "b0056673ad2dfed1fd1a1e1517b4a554",
+            "eventSource": "aws:sqs",
+            "eventSourceARN": "arn:aws:sqs:eu-west-2:533306432062:Stack-Networks-Automation-rSqsTgwRoutingQueue-19LQXZ1XNWFJN",
+            "awsRegion": "eu-west-2"
+        }
+    ]
+}
