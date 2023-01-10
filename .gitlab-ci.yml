@@ -1,0 +1,56 @@
+---
+variables:
+  TEMPLATE_NAME: <template_name.yaml>
+  REGION: <region>
+  DEPLOY_BUCKET: <bucket_name>
+
+stages:
+  - validate
+  - test
+  - build
+  - deploy
+  
+cfnvalidate:
+  stage: validate
+  image: taskcat/taskcat
+  script:
+    - taskcat lint
+
+# cfntest:
+#   stage: test
+#   image: ruby:2.5
+#   script:
+#     - gem install cfn-nag
+#     - cfn_nag_rules
+#     - cfn_nag *.yml
+
+cfnbuild:
+  stage: build
+  image: python:3.8
+  before_script:
+    - pip install awscli aws-sam-cli
+    - apt-get update -y
+    - apt-get install -y jq
+  script:
+    - . ./deploy_scripts/assume_role.sh
+    - sam validate --region ${REGION}
+    - sam build
+    - sam package --s3-bucket ${DEPLOY_BUCKET} --region ${REGION} --output-template-file ${TEMPLATE_NAME}
+  artifacts:
+    paths:
+      - ${TEMPLATE_NAME}
+
+deploystack:
+  stage: deploy
+  image: 
+    name: amazon/aws-cli
+    entrypoint: [""]
+  variables:
+    STACK_NAME: Stack-Networks-Automation
+  environment:
+    name: dev
+  script:
+      - yum -y install jq
+      - . ./deploy_scripts/assume_role.sh
+      - ./deploy_scripts/create_change_set.sh
+      - ./deploy_scripts/execute_change_set.sh

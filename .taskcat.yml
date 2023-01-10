@@ -1,0 +1,8 @@
+project:
+  name: vpc-demo-deploy
+  regions:
+    - eu-west-2
+# tests:
+#   cis-group-3-test:
+#     template: ./template.yml
+#     s3_bucket: ascoarchitect-taskcat
